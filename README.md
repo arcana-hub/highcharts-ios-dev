@@ -12,6 +12,10 @@ The most popular, robust and battle-tested JavaScript Charting library is now av
 
 Access the full [API documentation](http://api.highcharts.com/highcharts-ios/) here.
 
+## Contributing
+
+Contributions are made in the [development repo here](https://github.com/highcharts/highcharts-ios-dev).
+
 # HOWTO
 
 Here we present how to create basic chart and place it in your project.
