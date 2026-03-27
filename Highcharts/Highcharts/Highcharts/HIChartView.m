@@ -461,10 +461,12 @@ static NSBundle *highchartsBundle = nil;
 }
 
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
-    if (@available(iOS 15.0, *)) {
-      decisionHandler(WKNavigationResponsePolicyDownload);
+    // Allow regular HTML/file navigations for chart rendering.
+    // Only switch to download when WebKit cannot display the MIME type.
+    if (!navigationResponse.canShowMIMEType) {
+        decisionHandler(WKNavigationResponsePolicyDownload);
     } else {
-      decisionHandler(WKNavigationResponsePolicyAllow);
+        decisionHandler(WKNavigationResponsePolicyAllow);
     }
 }
 
