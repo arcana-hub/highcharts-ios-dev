@@ -256,17 +256,17 @@ static NSBundle *highchartsBundle = nil;
     if (!self.options) {
         return;
     }
-    
+
     NSMutableDictionary *options = [[self.options getParams] mutableCopy];
-    
+
     // Prepare HI objects from options.
     [self prepareHIObjects:options];
-    
+
     // Prepare HTML with options.
     [self prepareHTML:options];
-    
-    // Load HTML
-    [self.webView loadHTMLString:self.HTML.html baseURL:[highchartsBundle bundleURL]];
+
+    // Load HTML using file-based approach for iOS 26.4 compatibility
+    [self loadHTMLWithFileURL:self.HTML.html];
     if ([_synced boolValue]) CFRunLoopRunInMode((CFStringRef)NSDefaultRunLoopMode, 1, NO);
 }
 
@@ -274,17 +274,61 @@ static NSBundle *highchartsBundle = nil;
     if (!options) {
         return;
     }
-    
+
     NSMutableDictionary *jsonOptions = [self recursiveMutableCopy:options];
-    
+
     // Prepare HI objects from options.
     [self prepareHIObjects:jsonOptions];
-    
+
     // Prepare HTML with options.
     [self prepareHTML:jsonOptions];
-    
-    // Load HTML
-    [self.webView loadHTMLString:self.HTML.html baseURL:[highchartsBundle bundleURL]];
+
+    // Load HTML using file-based approach for iOS 26.4 compatibility
+    [self loadHTMLWithFileURL:self.HTML.html];
+}
+
+- (void)loadHTMLWithFileURL:(NSString *)htmlString {
+    // iOS 26.4 introduced stricter security for WKWebView that prevents loading
+    // JavaScript resources from framework bundles when using loadHTMLString:baseURL:.
+    // Solution: Write HTML to a temp file and use loadFileURL:allowingReadAccessToURL:
+    // with read access granted to the root directory for accessing both temp and framework resources.
+
+    // Create temp directory if needed
+    NSString *tempDir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"com.highcharts.temp"];
+    NSError *error = nil;
+    [[NSFileManager defaultManager] createDirectoryAtPath:tempDir
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:&error];
+
+    // Write HTML to temp file
+    NSString *tempHTMLPath = [tempDir stringByAppendingPathComponent:@"chart.html"];
+    [htmlString writeToFile:tempHTMLPath
+                 atomically:YES
+                   encoding:NSUTF8StringEncoding
+                      error:&error];
+
+    if (error) {
+        NSLog(@"[Highcharts] Error writing temp HTML file: %@", error);
+        return;
+    }
+
+    // Load file with read access to root directory
+    // This allows access to both the temp HTML file and framework bundle resources
+    NSURL *fileURL = [NSURL fileURLWithPath:tempHTMLPath];
+    NSURL *readAccessURL = [NSURL fileURLWithPath:@"/" isDirectory:YES];
+
+    NSLog(@"[Highcharts] Loading HTML from: %@", fileURL);
+    NSLog(@"[Highcharts] Read access URL: %@", readAccessURL);
+    NSLog(@"[Highcharts] Framework bundle: %@", [highchartsBundle bundleURL]);
+
+    // Debug: Log first 500 chars of HTML
+    if (htmlString.length > 0) {
+        NSString *preview = htmlString.length > 500 ? [htmlString substringToIndex:500] : htmlString;
+        NSLog(@"[Highcharts] HTML preview: %@...", preview);
+    }
+
+    [self.webView loadFileURL:fileURL allowingReadAccessToURL:readAccessURL];
 }
 
 - (void)callJSMethod:(NSDictionary *)dict {
@@ -425,8 +469,17 @@ static NSBundle *highchartsBundle = nil;
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    NSLog(@"[Highcharts] Chart loaded successfully");
     [self resize];
     if ([self.delegate respondsToSelector:@selector(chartViewDidLoad:)]) [self.delegate chartViewDidLoad:self];
+}
+
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    NSLog(@"[Highcharts] Failed to load chart: %@", error);
+}
+
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    NSLog(@"[Highcharts] Failed provisional navigation: %@", error);
 }
 
 #pragma mark - WKScriptMessageHandler
