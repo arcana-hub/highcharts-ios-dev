@@ -47,10 +47,10 @@
         return;
     }
 
-    NSString *template = @"<script src=\"%@\"></script>\n";
+    NSString *template = @"<script src=\"%@%@%@\"></script>\n";
 
     if (SYSTEM_VERSION_LESS_THAN(@"9.0")) {
-        template = @"<script src=\"%@\" charset=\"UTF-8\"></script>\n";
+        template = @"<script src=\"%@%@%@\" charset=\"UTF-8\"></script>\n";
     }
 
     NSString *jsFileName = [NSString stringWithFormat:@"%@%@%@", prefix, js, suffix];
@@ -61,10 +61,7 @@
         return;
     }
 
-    // Use absolute file URL for iOS 26.4 compatibility
-    // This allows loading scripts from framework bundle when HTML is in temp directory
-    NSURL *jsFileURL = [NSURL fileURLWithPath:jsFilePath];
-    self.scripts = [self.scripts stringByAppendingString:[NSString stringWithFormat:template, jsFileURL.absoluteString]];
+    self.scripts = [self.scripts stringByAppendingString:[NSString stringWithFormat:template, prefix, js, suffix]];
 }
 
 - (void)prepareOptions:(NSDictionary*)options;
@@ -90,22 +87,6 @@
 
 - (void)injectJavaScriptToHTML
 {
-    // Replace CSS reference with absolute file URL for iOS 26.4 compatibility
-    NSString *cssFilePath = [self.baseURL stringByAppendingPathComponent:@"highcharts.css"];
-    if ([[NSFileManager defaultManager] fileExistsAtPath:cssFilePath]) {
-        NSURL *cssFileURL = [NSURL fileURLWithPath:cssFilePath];
-        self.html = [self.html stringByReplacingOccurrencesOfString:@"href=\"highcharts.css\""
-                                                         withString:[NSString stringWithFormat:@"href=\"%@\"", cssFileURL.absoluteString]];
-    }
-
-    // Replace lib path with absolute URL for exporting library
-    NSString *libPath = [self.baseURL stringByAppendingPathComponent:@"js/lib/"];
-    if ([[NSFileManager defaultManager] fileExistsAtPath:libPath]) {
-        NSURL *libURL = [NSURL fileURLWithPath:libPath];
-        self.html = [self.html stringByReplacingOccurrencesOfString:@"libURL: 'js/lib/'"
-                                                         withString:[NSString stringWithFormat:@"libURL: '%@'", libURL.absoluteString]];
-    }
-
     self.html = [self.html stringByReplacingOccurrencesOfString:@"{{script}}" withString:self.scripts?:@""];
 
     self.html = [self.html stringByReplacingOccurrencesOfString:@"{{options}}" withString:self.options?:@""];

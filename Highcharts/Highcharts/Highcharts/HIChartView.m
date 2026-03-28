@@ -288,46 +288,49 @@ static NSBundle *highchartsBundle = nil;
 }
 
 - (void)loadHTMLWithFileURL:(NSString *)htmlString {
-    // iOS 26.4 introduced stricter security for WKWebView that prevents loading
-    // JavaScript resources from framework bundles when using loadHTMLString:baseURL:.
-    // Solution: Write HTML to a temp file and use loadFileURL:allowingReadAccessToURL:
-    // with read access granted to the root directory for accessing both temp and framework resources.
+    // iOS 26.4 changed WKWebView behavior: loadHTMLString:baseURL: no longer loads
+    // JS/CSS resources from a framework bundle (app bundle container).
+    //
+    // On a real device, the WKWebView WebContent process is sandboxed and cannot
+    // cross the OS container boundary between the app bundle container
+    // (/private/var/containers/Bundle/...) and the data container
+    // (/private/var/mobile/Containers/Data/...) — even with readAccessURL: /.
+    // The simulator does not enforce this container boundary, which is why
+    // the previous approach (absolute file:// URLs + readAccessURL: /) only
+    // worked in the simulator.
+    //
+    // Solution: Copy the Highcharts bundle into the data container's temp directory
+    // so that the HTML and all JS/CSS resources are co-located in a single directory
+    // that WKWebView can always access. Load with readAccessURL scoped to that dir.
 
-    // Create temp directory if needed
-    NSString *tempDir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"com.highcharts.temp"];
-    NSError *error = nil;
-    [[NSFileManager defaultManager] createDirectoryAtPath:tempDir
-                              withIntermediateDirectories:YES
-                                               attributes:nil
-                                                    error:&error];
-
-    // Write HTML to temp file
-    NSString *tempHTMLPath = [tempDir stringByAppendingPathComponent:@"chart.html"];
-    [htmlString writeToFile:tempHTMLPath
-                 atomically:YES
-                   encoding:NSUTF8StringEncoding
-                      error:&error];
-
-    if (error) {
-        NSLog(@"[Highcharts] Error writing temp HTML file: %@", error);
+    // Ensure the bundle is copied into the temp directory (data container).
+    // HIGBundle skips the copy if the directory already exists, so this is fast
+    // on every chart load after the first.
+    if (![HIGBundle preloadBundle:kHighchartsChartBundle]) {
+        NSLog(@"[Highcharts] Failed to copy bundle to temp directory");
         return;
     }
 
-    // Load file with read access to root directory
-    // This allows access to both the temp HTML file and framework bundle resources
-    NSURL *fileURL = [NSURL fileURLWithPath:tempHTMLPath];
-    NSURL *readAccessURL = [NSURL fileURLWithPath:@"/" isDirectory:YES];
-
-    NSLog(@"[Highcharts] Loading HTML from: %@", fileURL);
-    NSLog(@"[Highcharts] Read access URL: %@", readAccessURL);
-    NSLog(@"[Highcharts] Framework bundle: %@", [highchartsBundle bundleURL]);
-
-    // Debug: Log first 500 chars of HTML
-    if (htmlString.length > 0) {
-        NSString *preview = htmlString.length > 500 ? [htmlString substringToIndex:500] : htmlString;
-        NSLog(@"[Highcharts] HTML preview: %@...", preview);
+    NSBundle *tempBundle = [HIGBundle bundleIfExists:kHighchartsChartBundle];
+    if (!tempBundle) {
+        NSLog(@"[Highcharts] Temp bundle not found after preload");
+        return;
     }
 
+    // Write the chart HTML into the same directory as the JS/CSS resources.
+    // The HTML uses relative paths (e.g. js/highcharts.js, highcharts.css)
+    // which resolve against this directory — no cross-container access needed.
+    NSString *tempHTMLPath = [tempBundle.bundlePath stringByAppendingPathComponent:@"chart.html"];
+    NSError *error = nil;
+    [htmlString writeToFile:tempHTMLPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
+
+    if (error) {
+        NSLog(@"[Highcharts] Error writing chart HTML: %@", error);
+        return;
+    }
+
+    NSURL *fileURL = [NSURL fileURLWithPath:tempHTMLPath];
+    NSURL *readAccessURL = [NSURL fileURLWithPath:tempBundle.bundlePath isDirectory:YES];
     [self.webView loadFileURL:fileURL allowingReadAccessToURL:readAccessURL];
 }
 
