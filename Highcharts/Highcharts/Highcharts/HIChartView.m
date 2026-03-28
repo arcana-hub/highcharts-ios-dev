@@ -461,9 +461,10 @@ static NSBundle *highchartsBundle = nil;
 }
 
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
-    // Allow regular HTML/file navigations for chart rendering.
-    // Only switch to download when WebKit cannot display the MIME type.
-    if (!navigationResponse.canShowMIMEType) {
+    // Always allow subresource loads (JS/CSS/images). Forcing download for
+    // non-displayable MIME types on subresources can block chart scripts.
+    // Restrict download handling to main-frame responses only.
+    if (navigationResponse.isForMainFrame && !navigationResponse.canShowMIMEType) {
         decisionHandler(WKNavigationResponsePolicyDownload);
     } else {
         decisionHandler(WKNavigationResponsePolicyAllow);
