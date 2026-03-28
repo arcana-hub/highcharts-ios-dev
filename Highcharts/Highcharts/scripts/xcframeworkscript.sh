@@ -1,18 +1,13 @@
-#!/bin/bash
-set -e
-
-SIGNING_FLAGS="CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO"
+# iOS devices
 
 rm -rf ./XCFramework/*
 
-# iOS devices
 xcodebuild archive \
     -scheme Highcharts \
     -archivePath "./XCFramework/Archive-iOS.xcarchive" \
     -sdk iphoneos \
     SKIP_INSTALL=NO \
-    BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-    $SIGNING_FLAGS
+    BUILD_LIBRARY_FOR_DISTRIBUTION=YES
 
 # iOS simulator
 xcodebuild archive \
@@ -20,8 +15,7 @@ xcodebuild archive \
     -archivePath "./XCFramework/Archive-iOS-Simulator.xcarchive" \
     -sdk iphonesimulator \
     SKIP_INSTALL=NO \
-    BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-    $SIGNING_FLAGS
+    BUILD_LIBRARY_FOR_DISTRIBUTION=YES
 
 # Mac Catalyst
 xcodebuild archive \
@@ -29,8 +23,7 @@ xcodebuild archive \
     -archivePath "./XCFramework/Archive-Mac-Catalyst.xcarchive" \
     -destination 'platform=macOS,arch=x86_64,variant=Mac Catalyst' \
     SKIP_INSTALL=NO \
-    BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-    $SIGNING_FLAGS
+    BUILD_LIBRARY_FOR_DISTRIBUTION=YES
 
 xcodebuild -create-xcframework \
     -framework "./XCFramework/Archive-iOS.xcarchive/Products/Library/Frameworks/Highcharts.framework" \
@@ -41,5 +34,3 @@ xcodebuild -create-xcframework \
 rm -dr ./XCFramework/Archive-iOS.xcarchive
 rm -dr ./XCFramework/Archive-iOS-Simulator.xcarchive
 rm -dr ./XCFramework/Archive-Mac-Catalyst.xcarchive
-
-echo "✅ XCFramework built successfully at XCFramework/Highcharts.xcframework"
