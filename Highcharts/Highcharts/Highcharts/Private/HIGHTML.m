@@ -46,21 +46,21 @@
     if (!js) {
         return;
     }
-
+    
     NSString *template = @"<script src=\"%@%@%@\"></script>\n";
-
+    
     if (SYSTEM_VERSION_LESS_THAN(@"9.0")) {
         template = @"<script src=\"%@%@%@\" charset=\"UTF-8\"></script>\n";
     }
-
+    
     NSString *jsFileName = [NSString stringWithFormat:@"%@%@%@", prefix, js, suffix];
     NSString *jsFilePath = [self.baseURL stringByAppendingPathComponent:jsFileName];
-
+    
     if (![[NSFileManager defaultManager] fileExistsAtPath:jsFilePath]) {
         NSLog(@"[ Highcharts ]: %@, dont exits!", jsFileName);
         return;
     }
-
+    
     self.scripts = [self.scripts stringByAppendingString:[NSString stringWithFormat:template, prefix, js, suffix]];
 }
 
@@ -88,9 +88,9 @@
 - (void)injectJavaScriptToHTML
 {
     self.html = [self.html stringByReplacingOccurrencesOfString:@"{{script}}" withString:self.scripts?:@""];
-
+    
     self.html = [self.html stringByReplacingOccurrencesOfString:@"{{options}}" withString:self.options?:@""];
-
+    
     self.html = [self.html stringByReplacingOccurrencesOfString:@"{{lang}}" withString:self.lang?:@""];
 
 }

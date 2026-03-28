@@ -256,15 +256,15 @@ static NSBundle *highchartsBundle = nil;
     if (!self.options) {
         return;
     }
-
+    
     NSMutableDictionary *options = [[self.options getParams] mutableCopy];
-
+    
     // Prepare HI objects from options.
     [self prepareHIObjects:options];
-
+    
     // Prepare HTML with options.
     [self prepareHTML:options];
-
+    
     // Load HTML using file-based approach for iOS 26.4 compatibility
     [self loadHTMLWithFileURL:self.HTML.html];
     if ([_synced boolValue]) CFRunLoopRunInMode((CFStringRef)NSDefaultRunLoopMode, 1, NO);
@@ -274,15 +274,15 @@ static NSBundle *highchartsBundle = nil;
     if (!options) {
         return;
     }
-
+    
     NSMutableDictionary *jsonOptions = [self recursiveMutableCopy:options];
-
+    
     // Prepare HI objects from options.
     [self prepareHIObjects:jsonOptions];
-
+    
     // Prepare HTML with options.
     [self prepareHTML:jsonOptions];
-
+    
     // Load HTML using file-based approach for iOS 26.4 compatibility
     [self loadHTMLWithFileURL:self.HTML.html];
 }
@@ -474,17 +474,8 @@ static NSBundle *highchartsBundle = nil;
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-    NSLog(@"[Highcharts] Chart loaded successfully");
     [self resize];
     if ([self.delegate respondsToSelector:@selector(chartViewDidLoad:)]) [self.delegate chartViewDidLoad:self];
-}
-
-- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    NSLog(@"[Highcharts] Failed to load chart: %@", error);
-}
-
-- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    NSLog(@"[Highcharts] Failed provisional navigation: %@", error);
 }
 
 #pragma mark - WKScriptMessageHandler
