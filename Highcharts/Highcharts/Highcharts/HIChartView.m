@@ -27,6 +27,11 @@
 @property (nonatomic, strong) NSMutableDictionary *closures;
 @property (nonatomic, strong) NSArray *additionalPlugins;
 @property (nonatomic, strong) HIGExport *export;
+// Unique identifier for this chart instance's temp HTML file.
+// Each HIChartView writes to its own file so concurrent instances
+// cannot overwrite each other's HTML, which would cause a UUID
+// mismatch between the loaded JS and self.closures → EXC_BAD_ACCESS.
+@property (nonatomic, strong) NSString *chartUUID;
 @end
 
 static NSNumber *_synced = nil;
@@ -101,6 +106,7 @@ static NSBundle *highchartsBundle = nil;
     
     self.export = [[HIGExport alloc] init];
     self.closures = [[NSMutableDictionary alloc] init];
+    self.chartUUID = [[NSUUID UUID] UUIDString];
     self.webView = [[_synced boolValue] ? [HIWKSyncedWebView alloc] : [WKWebView alloc] initWithFrame:frame configuration:configuration];
     self.webView.scrollView.scrollEnabled = NO;
     if (@available(iOS 16.4, *)) {
@@ -146,6 +152,16 @@ static NSBundle *highchartsBundle = nil;
     if (self.options) {
         [self removeObserver:self forKeyPath:@"options.isUpdated"];
         [self removeObserver:self forKeyPath:@"options.jsClassMethod"];
+    }
+    // Clean up the per-instance temp HTML file to avoid accumulation in the
+    // temp directory across chart creation/destruction cycles.
+    if (self.chartUUID) {
+        NSBundle *tempBundle = [HIGBundle bundleIfExists:kHighchartsChartBundle];
+        if (tempBundle) {
+            NSString *tempHTMLPath = [tempBundle.bundlePath stringByAppendingPathComponent:
+                                      [NSString stringWithFormat:@"chart_%@.html", self.chartUUID]];
+            [[NSFileManager defaultManager] removeItemAtPath:tempHTMLPath error:nil];
+        }
     }
 }
 
@@ -320,7 +336,15 @@ static NSBundle *highchartsBundle = nil;
     // Write the chart HTML into the same directory as the JS/CSS resources.
     // The HTML uses relative paths (e.g. js/highcharts.js, highcharts.css)
     // which resolve against this directory — no cross-container access needed.
-    NSString *tempHTMLPath = [tempBundle.bundlePath stringByAppendingPathComponent:@"chart.html"];
+    //
+    // Use a per-instance filename (self.chartUUID) so that concurrent HIChartView
+    // instances do not overwrite each other's HTML file. If both charts shared
+    // "chart.html" and the second chart wrote before the first chart's WKWebView
+    // process read the file, the first chart would load the second chart's HTML
+    // (containing the second chart's closure UUIDs), causing self.closures lookups
+    // to return nil and crashing with EXC_BAD_ACCESS at 0x10.
+    NSString *tempHTMLPath = [tempBundle.bundlePath stringByAppendingPathComponent:
+                              [NSString stringWithFormat:@"chart_%@.html", self.chartUUID]];
     NSError *error = nil;
     [htmlString writeToFile:tempHTMLPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
 
