@@ -23,15 +23,30 @@ static dispatch_queue_t higBundleQueue(void) {
 {
     __block BOOL result = YES;
     dispatch_sync(higBundleQueue(), ^{
+        NSFileManager *fileManager = [NSFileManager defaultManager];
         NSBundle *frameworkBundle = [self sourceBundle:bundleName];
         NSString *tmpBundle = [frameworkBundle bundlePath];
         NSString *tmpBundleDirectory = [NSTemporaryDirectory() stringByAppendingPathComponent:bundleName];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:tmpBundleDirectory]) {
-            return;
+
+        // A previously-copied temp bundle may be stale or incomplete: earlier builds
+        // populated this directory differently, and because the copy below is skipped
+        // whenever the directory already exists, a partial copy (e.g. missing
+        // highcharts.html) would otherwise be reused forever. The chart's HTML template
+        // and all JS/CSS resources are loaded relative to this directory, so an
+        // incomplete copy results in a blank chart (file:// load fails with -1100).
+        //
+        // Validate the copy using highcharts.html as a sentinel. If the directory exists
+        // but is missing the template, treat it as stale, remove it, and re-copy.
+        if ([fileManager fileExistsAtPath:tmpBundleDirectory]) {
+            NSString *sentinel = [tmpBundleDirectory stringByAppendingPathComponent:@"highcharts.html"];
+            if ([fileManager fileExistsAtPath:sentinel]) {
+                return;
+            }
+            [fileManager removeItemAtPath:tmpBundleDirectory error:nil];
         }
-        
+
         NSError *error = nil;
-        if (![[NSFileManager defaultManager] copyItemAtPath:tmpBundle toPath:tmpBundleDirectory error:&error]) {
+        if (![fileManager copyItemAtPath:tmpBundle toPath:tmpBundleDirectory error:&error]) {
             NSLog(@"Error copying files: %@", [error localizedDescription]);
             result = NO;
         }

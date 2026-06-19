@@ -87,6 +87,11 @@ static NSBundle *highchartsBundle = nil;
 {
     self.layoutMargins = UIEdgeInsetsZero;
     self.preservesSuperviewLayoutMargins = NO;
+    // Ensure the temp bundle copy is present AND complete before resolving it.
+    // [HIGBundle bundle:] prefers the temp-directory copy, which may be stale or
+    // partial (e.g. missing highcharts.html) from an earlier build. preloadBundle
+    // now heals such copies, guaranteeing the HTML template below loads correctly.
+    [HIGBundle preloadBundle:kHighchartsChartBundle];
     highchartsBundle = [HIGBundle bundle:kHighchartsChartBundle];
     
     self.additionalPlugins = @[ @"exporting", @"offline-exporting", @"accessibility", @"boost", @"data", @"drilldown", @"moment", @"moment-timezone-with-data" ];
