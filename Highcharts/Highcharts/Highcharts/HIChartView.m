@@ -27,9 +27,13 @@
 @property (nonatomic, strong) NSMutableDictionary *closures;
 @property (nonatomic, strong) NSArray *additionalPlugins;
 @property (nonatomic, strong) HIGExport *export;
+// Unique identifier for this chart instance's temp HTML file.
+// Each HIChartView writes to its own file so concurrent instances
+// cannot overwrite each other's HTML, which would cause a UUID
+// mismatch between the loaded JS and self.closures → EXC_BAD_ACCESS.
+@property (nonatomic, strong) NSString *chartUUID;
 @end
 
-static BOOL preloaded = NO;
 static NSNumber *_synced = nil;
 static NSBundle *highchartsBundle = nil;
 
@@ -37,15 +41,16 @@ static NSBundle *highchartsBundle = nil;
 
 + (void)preload
 {
-    if (!preloaded) {
-        [HIGBundle preloadBundle:kHighchartsChartBundle];
-        highchartsBundle = [HIGBundle bundle:kHighchartsChartBundle];
-    }
-    preloaded = YES;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        highchartsBundle = [HIGBundle sourceBundle:kHighchartsChartBundle];
+    });
 }
 
 + (void)addFont:(NSString *)path {
     [self.class preload];
+    [HIGBundle preloadBundle:kHighchartsChartBundle];
+    highchartsBundle = [HIGBundle bundle:kHighchartsChartBundle];
     [HICustomFont addFont:path bundle:highchartsBundle];
 }
 
@@ -82,7 +87,12 @@ static NSBundle *highchartsBundle = nil;
 {
     self.layoutMargins = UIEdgeInsetsZero;
     self.preservesSuperviewLayoutMargins = NO;
-    if (highchartsBundle == nil) highchartsBundle = [HIGBundle bundle:kHighchartsChartBundle];
+    // Ensure the temp bundle copy is present AND complete before resolving it.
+    // [HIGBundle bundle:] prefers the temp-directory copy, which may be stale or
+    // partial (e.g. missing highcharts.html) from an earlier build. preloadBundle
+    // now heals such copies, guaranteeing the HTML template below loads correctly.
+    [HIGBundle preloadBundle:kHighchartsChartBundle];
+    highchartsBundle = [HIGBundle bundle:kHighchartsChartBundle];
     
     self.additionalPlugins = @[ @"exporting", @"offline-exporting", @"accessibility", @"boost", @"data", @"drilldown", @"moment", @"moment-timezone-with-data" ];
     
@@ -101,6 +111,7 @@ static NSBundle *highchartsBundle = nil;
     
     self.export = [[HIGExport alloc] init];
     self.closures = [[NSMutableDictionary alloc] init];
+    self.chartUUID = [[NSUUID UUID] UUIDString];
     self.webView = [[_synced boolValue] ? [HIWKSyncedWebView alloc] : [WKWebView alloc] initWithFrame:frame configuration:configuration];
     self.webView.scrollView.scrollEnabled = NO;
     if (@available(iOS 16.4, *)) {
@@ -146,6 +157,16 @@ static NSBundle *highchartsBundle = nil;
     if (self.options) {
         [self removeObserver:self forKeyPath:@"options.isUpdated"];
         [self removeObserver:self forKeyPath:@"options.jsClassMethod"];
+    }
+    // Clean up the per-instance temp HTML file to avoid accumulation in the
+    // temp directory across chart creation/destruction cycles.
+    if (self.chartUUID) {
+        NSBundle *tempBundle = [HIGBundle bundleIfExists:kHighchartsChartBundle];
+        if (tempBundle) {
+            NSString *tempHTMLPath = [tempBundle.bundlePath stringByAppendingPathComponent:
+                                      [NSString stringWithFormat:@"chart_%@.html", self.chartUUID]];
+            [[NSFileManager defaultManager] removeItemAtPath:tempHTMLPath error:nil];
+        }
     }
 }
 
@@ -265,8 +286,8 @@ static NSBundle *highchartsBundle = nil;
     // Prepare HTML with options.
     [self prepareHTML:options];
     
-    // Load HTML
-    [self.webView loadHTMLString:self.HTML.html baseURL:[highchartsBundle bundleURL]];
+    // Load HTML using file-based approach for iOS 26.4 compatibility
+    [self loadHTMLWithFileURL:self.HTML.html];
     if ([_synced boolValue]) CFRunLoopRunInMode((CFStringRef)NSDefaultRunLoopMode, 1, NO);
 }
 
@@ -283,8 +304,63 @@ static NSBundle *highchartsBundle = nil;
     // Prepare HTML with options.
     [self prepareHTML:jsonOptions];
     
-    // Load HTML
-    [self.webView loadHTMLString:self.HTML.html baseURL:[highchartsBundle bundleURL]];
+    // Load HTML using file-based approach for iOS 26.4 compatibility
+    [self loadHTMLWithFileURL:self.HTML.html];
+}
+
+- (void)loadHTMLWithFileURL:(NSString *)htmlString {
+    // iOS 26.4 changed WKWebView behavior: loadHTMLString:baseURL: no longer loads
+    // JS/CSS resources from a framework bundle (app bundle container).
+    //
+    // On a real device, the WKWebView WebContent process is sandboxed and cannot
+    // cross the OS container boundary between the app bundle container
+    // (/private/var/containers/Bundle/...) and the data container
+    // (/private/var/mobile/Containers/Data/...) — even with readAccessURL: /.
+    // The simulator does not enforce this container boundary, which is why
+    // the previous approach (absolute file:// URLs + readAccessURL: /) only
+    // worked in the simulator.
+    //
+    // Solution: Copy the Highcharts bundle into the data container's temp directory
+    // so that the HTML and all JS/CSS resources are co-located in a single directory
+    // that WKWebView can always access. Load with readAccessURL scoped to that dir.
+
+    // Ensure the bundle is copied into the temp directory (data container).
+    // HIGBundle skips the copy if the directory already exists, so this is fast
+    // on every chart load after the first.
+    if (![HIGBundle preloadBundle:kHighchartsChartBundle]) {
+        NSLog(@"[Highcharts] Failed to copy bundle to temp directory");
+        return;
+    }
+
+    NSBundle *tempBundle = [HIGBundle bundleIfExists:kHighchartsChartBundle];
+    if (!tempBundle) {
+        NSLog(@"[Highcharts] Temp bundle not found after preload");
+        return;
+    }
+
+    // Write the chart HTML into the same directory as the JS/CSS resources.
+    // The HTML uses relative paths (e.g. js/highcharts.js, highcharts.css)
+    // which resolve against this directory — no cross-container access needed.
+    //
+    // Use a per-instance filename (self.chartUUID) so that concurrent HIChartView
+    // instances do not overwrite each other's HTML file. If both charts shared
+    // "chart.html" and the second chart wrote before the first chart's WKWebView
+    // process read the file, the first chart would load the second chart's HTML
+    // (containing the second chart's closure UUIDs), causing self.closures lookups
+    // to return nil and crashing with EXC_BAD_ACCESS at 0x10.
+    NSString *tempHTMLPath = [tempBundle.bundlePath stringByAppendingPathComponent:
+                              [NSString stringWithFormat:@"chart_%@.html", self.chartUUID]];
+    NSError *error = nil;
+    [htmlString writeToFile:tempHTMLPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
+
+    if (error) {
+        NSLog(@"[Highcharts] Error writing chart HTML: %@", error);
+        return;
+    }
+
+    NSURL *fileURL = [NSURL fileURLWithPath:tempHTMLPath];
+    NSURL *readAccessURL = [NSURL fileURLWithPath:tempBundle.bundlePath isDirectory:YES];
+    [self.webView loadFileURL:fileURL allowingReadAccessToURL:readAccessURL];
 }
 
 - (void)callJSMethod:(NSDictionary *)dict {
@@ -417,10 +493,12 @@ static NSBundle *highchartsBundle = nil;
 }
 
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
-    if (@available(iOS 15.0, *)) {
-      decisionHandler(WKNavigationResponsePolicyDownload);
+    // Allow regular HTML/file navigations for chart rendering.
+    // Only switch to download when WebKit cannot display the MIME type.
+    if (!navigationResponse.canShowMIMEType) {
+        decisionHandler(WKNavigationResponsePolicyDownload);
     } else {
-      decisionHandler(WKNavigationResponsePolicyAllow);
+        decisionHandler(WKNavigationResponsePolicyAllow);
     }
 }
 

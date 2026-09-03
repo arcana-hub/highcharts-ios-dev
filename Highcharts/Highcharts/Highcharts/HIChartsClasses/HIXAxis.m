@@ -27,6 +27,8 @@
 	copyXAxis.tickWidth = [self.tickWidth copyWithZone: zone];
 	copyXAxis.showFirstLabel = [self.showFirstLabel copyWithZone: zone];
 	copyXAxis.maxPadding = [self.maxPadding copyWithZone: zone];
+	copyXAxis.ordinal = [self.ordinal copyWithZone: zone];
+	copyXAxis.overscroll = [self.overscroll copyWithZone: zone];
 	copyXAxis.startOfWeek = [self.startOfWeek copyWithZone: zone];
 	copyXAxis.id = [self.id copyWithZone: zone];
 	copyXAxis.tickPositions = [self.tickPositions copyWithZone: zone];
@@ -288,6 +290,12 @@
 	}
 	if (self.tickInterval) {
 		params[@"tickInterval"] = self.tickInterval;
+	}
+	if (self.ordinal) {
+		params[@"ordinal"] = self.ordinal;
+	}
+	if (self.overscroll) {
+		params[@"overscroll"] = self.overscroll;
 	}
 	if (self.tickPosition) {
 		params[@"tickPosition"] = self.tickPosition;
@@ -700,6 +708,18 @@
 	NSNumber *oldValue = _tickInterval;
 	_tickInterval = tickInterval;
 	[self updateNSObject:oldValue newValue:tickInterval propertyName:@"tickInterval"];
+}
+
+-(void)setOrdinal:(NSNumber *)ordinal {
+	NSNumber *oldValue = _ordinal;
+	_ordinal = ordinal;
+	[self updateNSObject:oldValue newValue:ordinal propertyName:@"ordinal"];
+}
+
+-(void)setOverscroll:(NSNumber *)overscroll {
+	NSNumber *oldValue = _overscroll;
+	_overscroll = overscroll;
+	[self updateNSObject:oldValue newValue:overscroll propertyName:@"overscroll"];
 }
 
 -(void)setTickPosition:(NSString *)tickPosition {

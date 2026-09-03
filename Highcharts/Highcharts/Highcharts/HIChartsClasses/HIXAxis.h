@@ -494,6 +494,20 @@ The interval of the tick marks in axis units. When `undefined`, the tick interva
 */
 @property(nonatomic, readwrite) NSNumber *tickInterval;
 /**
+Whether to treat the datetime axis as ordinal: points are laid out at equal
+distances by index and gaps without data (weekends, holidays, overnight)
+collapse. Requires `type` to be `datetime`.
+
+**Defaults to** `false`.
+*/
+@property(nonatomic, readwrite) NSNumber *ordinal;
+/**
+The amount of space in milliseconds rendered after the last data point
+(overscroll area). Used to reserve room until market close on intraday
+datetime axes.
+*/
+@property(nonatomic, readwrite) NSNumber *overscroll;
+/**
 The position of the major tick marks relative to the axis line. Can be one of `inside` and `outside`.
 
 **Accepted values:** `["inside", "outside"]`.

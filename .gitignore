@@ -61,3 +61,4 @@ fastlane/screenshots
 #/Release/Highcharts.framework
 /Release/Fabric.framework
 /Release/Crashlytics.framework
+XCFramework/
